@@ -74,7 +74,7 @@ func Test_pipe(t *testing.T) {
 	}
 }
 
-var take = func(
+var Take = func(
 	done <-chan interface{},
 	valueStream <-chan interface{},
 	num int,
@@ -92,7 +92,7 @@ var take = func(
 	}()
 	return takeStream
 }
-var repeat = func(
+var Repeat = func(
 	done <-chan interface{},
 	values ...interface{},
 ) <-chan interface{} {
@@ -151,13 +151,13 @@ var toString = func(
 func Test_geenrators(t *testing.T) {
 
 	done := make(chan interface{})
-	for num := range take(done, repeat(done, 1), 10) {
+	for num := range Take(done, Repeat(done, 1), 10) {
 		fmt.Printf("%v ", num)
 	}
 
 	random := func() interface{} { return rand.Int() }
 
-	for num := range take(done, repeatFn(done, random), 10) {
+	for num := range Take(done, repeatFn(done, random), 10) {
 		fmt.Println(num)
 	}
 }
@@ -167,7 +167,7 @@ func BenchmarkGeneric(b *testing.B) {
 	defer close(done)
 
 	b.ResetTimer()
-	for range toString(done, take(done, repeat(done, "a"), b.N)) {
+	for range toString(done, Take(done, Repeat(done, "a"), b.N)) {
 	}
 }
 
@@ -246,7 +246,7 @@ func Test_PrimeFinder(t *testing.T) {
 
 	randIntStream := toInt(done, repeatFn(done, rand))
 	fmt.Println("Primes:")
-	for prime := range take(done, primeFinder(done, randIntStream), 10) {
+	for prime := range Take(done, primeFinder(done, randIntStream), 10) {
 		fmt.Printf("\t%d\n", prime)
 	}
 
@@ -284,7 +284,6 @@ var fanIn = func(
 ) <-chan interface{} {
 	var wg sync.WaitGroup
 	multiplexedStream := make(chan interface{})
-
 	multiplex := func(c <-chan interface{}) {
 		defer wg.Done()
 		for i := range c {
@@ -325,7 +324,7 @@ func TestFunOut_FanIn(t *testing.T) {
 		finders[i] = primeFinder(done, randIntStream)
 	}
 
-	for prime := range take(done, fanIn(done, finders...), 100) {
+	for prime := range Take(done, fanIn(done, finders...), 100) {
 		fmt.Printf("\t%d\n", prime)
 	}
 

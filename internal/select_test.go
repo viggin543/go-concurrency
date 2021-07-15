@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+func banana()  {
+
+}
+
 func TestSelectStatements(t *testing.T) {
 	start := time.Now()
 	c := make(chan interface{})
