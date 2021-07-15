@@ -1,5 +1,62 @@
 package internal
 
+import "sync"
+
+func RepeatFn(
+	done <-chan interface{},
+	fn func() interface{},
+) <-chan interface{} {
+	valueStream := make(chan interface{})
+	go func() {
+		defer close(valueStream)
+		for {
+			select {
+			case <-done:
+				return
+			case valueStream <- fn():
+			}
+		}
+	}()
+	return valueStream
+}
+
+func ToString(
+	done <-chan interface{},
+	valueStream <-chan interface{},
+) <-chan string {
+	stringStream := make(chan string)
+	go func() {
+		defer close(stringStream)
+		for v := range valueStream {
+			select {
+			case <-done:
+				return
+			case stringStream <- v.(string):
+			}
+		}
+	}()
+	return stringStream
+}
+
+func ToInt(
+	done <-chan interface{},
+	valueStream <-chan interface{},
+) <-chan int {
+	stringStream := make(chan int)
+	go func() {
+		defer close(stringStream)
+		for v := range valueStream {
+			select {
+			case <-done:
+				return
+			case stringStream <- v.(int):
+			}
+		}
+	}()
+	return stringStream
+}
+
+
 func Tee(
 	done <-chan interface{},
 	in <-chan interface{},
@@ -98,3 +155,35 @@ func Repeat(
 	return valueStream
 }
 
+
+func FanIn(
+	done <-chan interface{},
+	channels ...<-chan interface{},
+) <-chan interface{} {
+	var wg sync.WaitGroup
+	multiplexedStream := make(chan interface{})
+	multiplex := func(c <-chan interface{}) {
+		defer wg.Done()
+		for i := range c {
+			select {
+			case <-done:
+				return
+			case multiplexedStream <- i:
+			}
+		}
+	}
+
+	// Select from all the channels
+	wg.Add(len(channels))
+	for _, c := range channels {
+		go multiplex(c)
+	}
+
+	// Wait for all the reads to complete
+	go func() {
+		wg.Wait()
+		close(multiplexedStream)
+	}()
+
+	return multiplexedStream
+}

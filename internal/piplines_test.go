@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 )
@@ -74,80 +73,6 @@ func Test_pipe(t *testing.T) {
 	}
 }
 
-var Take = func(
-	done <-chan interface{},
-	valueStream <-chan interface{},
-	num int,
-) <-chan interface{} {
-	takeStream := make(chan interface{})
-	go func() {
-		defer close(takeStream)
-		for i := 0; i < num; i++ {
-			select {
-			case <-done:
-				return
-			case takeStream <- <-valueStream:
-			}
-		}
-	}()
-	return takeStream
-}
-var Repeat = func(
-	done <-chan interface{},
-	values ...interface{},
-) <-chan interface{} {
-	valueStream := make(chan interface{})
-	go func() {
-		defer close(valueStream)
-		for {
-			for _, v := range values {
-				select {
-				case <-done:
-					return
-				case valueStream <- v:
-				}
-			}
-		}
-	}()
-	return valueStream
-}
-
-var repeatFn = func(
-	done <-chan interface{},
-	fn func() interface{},
-) <-chan interface{} {
-	valueStream := make(chan interface{})
-	go func() {
-		defer close(valueStream)
-		for {
-			select {
-			case <-done:
-				return
-			case valueStream <- fn():
-			}
-		}
-	}()
-	return valueStream
-}
-
-var toString = func(
-	done <-chan interface{},
-	valueStream <-chan interface{},
-) <-chan string {
-	stringStream := make(chan string)
-	go func() {
-		defer close(stringStream)
-		for v := range valueStream {
-			select {
-			case <-done:
-				return
-			case stringStream <- v.(string):
-			}
-		}
-	}()
-	return stringStream
-}
-
 func Test_geenrators(t *testing.T) {
 
 	done := make(chan interface{})
@@ -157,7 +82,7 @@ func Test_geenrators(t *testing.T) {
 
 	random := func() interface{} { return rand.Int() }
 
-	for num := range Take(done, repeatFn(done, random), 10) {
+	for num := range Take(done, RepeatFn(done, random), 10) {
 		fmt.Println(num)
 	}
 }
@@ -167,7 +92,7 @@ func BenchmarkGeneric(b *testing.B) {
 	defer close(done)
 
 	b.ResetTimer()
-	for range toString(done, Take(done, Repeat(done, "a"), b.N)) {
+	for range ToString(done, Take(done, Repeat(done, "a"), b.N)) {
 	}
 }
 
@@ -219,24 +144,6 @@ func BenchmarkTyped(b *testing.B) {
 	}
 }
 
-var toInt = func(
-	done <-chan interface{},
-	valueStream <-chan interface{},
-) <-chan int {
-	stringStream := make(chan int)
-	go func() {
-		defer close(stringStream)
-		for v := range valueStream {
-			select {
-			case <-done:
-				return
-			case stringStream <- v.(int):
-			}
-		}
-	}()
-	return stringStream
-}
-
 func Test_PrimeFinder(t *testing.T) {
 	rand := func() interface{} { return rand.Intn(7) }
 	done := make(chan interface{})
@@ -244,7 +151,7 @@ func Test_PrimeFinder(t *testing.T) {
 
 	start := time.Now()
 
-	randIntStream := toInt(done, repeatFn(done, rand))
+	randIntStream := ToInt(done, RepeatFn(done, rand))
 	fmt.Println("Primes:")
 	for prime := range Take(done, primeFinder(done, randIntStream), 10) {
 		fmt.Printf("\t%d\n", prime)
@@ -278,45 +185,13 @@ func primeFinder(done chan interface{}, stream <-chan int) <-chan interface{} {
 	return primes
 }
 
-var fanIn = func(
-	done <-chan interface{},
-	channels ...<-chan interface{},
-) <-chan interface{} {
-	var wg sync.WaitGroup
-	multiplexedStream := make(chan interface{})
-	multiplex := func(c <-chan interface{}) {
-		defer wg.Done()
-		for i := range c {
-			select {
-			case <-done:
-				return
-			case multiplexedStream <- i:
-			}
-		}
-	}
-
-	// Select from all the channels
-	wg.Add(len(channels))
-	for _, c := range channels {
-		go multiplex(c)
-	}
-
-	// Wait for all the reads to complete
-	go func() {
-		wg.Wait()
-		close(multiplexedStream)
-	}()
-
-	return multiplexedStream
-}
-
 func TestFunOut_FanIn(t *testing.T) {
 	done := make(chan interface{})
 	rand := func() interface{} { return rand.Intn(50000000) }
 
 	defer close(done)
 
-	randIntStream := toInt(done, repeatFn(done, rand))
+	randIntStream := ToInt(done, RepeatFn(done, rand))
 
 	numFinders := runtime.NumCPU()
 	finders := make([]<-chan interface{}, numFinders)
@@ -324,7 +199,7 @@ func TestFunOut_FanIn(t *testing.T) {
 		finders[i] = primeFinder(done, randIntStream)
 	}
 
-	for prime := range Take(done, fanIn(done, finders...), 100) {
+	for prime := range Take(done, FanIn(done, finders...), 100) {
 		fmt.Printf("\t%d\n", prime)
 	}
 
