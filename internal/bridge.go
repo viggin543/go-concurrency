@@ -56,7 +56,6 @@ func ToInt(
 	return stringStream
 }
 
-
 func Tee(
 	done <-chan interface{},
 	in <-chan interface{},
@@ -66,15 +65,16 @@ func Tee(
 	go func() {
 		defer close(out1)
 		defer close(out2)
-		for val := range Or(done, in) {
+		for val := range OrDone(done, in) {
 			//We will want to use local versions of out1 and out2, so we shadow these variables.
 			var out1, out2 = out1, out2
 			for i := 0; i < 2; i++ {
 				select {
 				case <-done:
 				case out1 <- val:
-					//    Once we’ve written to a channel, we set its shadowed copy to nil so that further writes will block
-					//   and the other channel may continue.
+					//  Once we’ve written to a channel, we set its shadowed copy to nil so that further writes will block
+					//  and the other channel may continue.
+					//  closing the chan here will not work since a closed chan does not block on read !
 					out1 = nil
 				case out2 <- val:
 					out2 = nil
@@ -85,8 +85,7 @@ func Tee(
 	return out1, out2
 }
 
-
-func Or(channels ...<-chan interface{}) <-chan interface{}   {
+func Or(channels ...<-chan interface{}) <-chan interface{} {
 	switch len(channels) {
 	case 0:
 		return nil
@@ -155,7 +154,6 @@ func Repeat(
 	return valueStream
 }
 
-
 func FanIn(
 	done <-chan interface{},
 	channels ...<-chan interface{},
@@ -186,4 +184,57 @@ func FanIn(
 	}()
 
 	return multiplexedStream
+}
+
+func OrDone(done, c <-chan interface{}) <-chan interface{} {
+	valStream := make(chan interface{})
+	go func() {
+		defer close(valStream)
+		for {
+			select {
+			case <-done:
+				return
+			case v, notClosed := <-c:
+				if notClosed == false { // channel is closed
+					return
+				}
+				select {
+				case valStream <- v:
+				case <-done:
+				}
+			}
+		}
+	}()
+	return valStream
+}
+
+func Bridge(
+	done <-chan interface{},
+	chanStream <-chan <-chan interface{},
+) <-chan interface{} {
+
+	valStream := make(chan interface{})
+	go func() {
+		defer close(valStream)
+		for {
+			var stream <-chan interface{}
+			select {
+			case maybeStream, isNotClosed := <-chanStream:
+				if isNotClosed == false {
+					return
+				}
+				stream = maybeStream
+				// this implementation can lead to starvation
+			case <-done:
+				return
+			}
+			for val := range OrDone(done, stream) {
+				select {
+				case valStream <- val:
+				case <-done:
+				}
+			}
+		}
+	}()
+	return valStream
 }

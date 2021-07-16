@@ -46,9 +46,9 @@ func TestChanDeadLock(t *testing.T) {
 		}
 		stringStream <- "Hello channels!"
 	}()
-	str, ok := <-stringStream
-	fmt.Println(str, ok)
-	//ok is false if chan was closed
+	str, notClosed := <-stringStream
+	fmt.Println(str, notClosed)
+	//notClosed is false if chan was closed
 }
 
 func TestReadingFromClosedChannel(t *testing.T) {
