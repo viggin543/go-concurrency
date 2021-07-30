@@ -2,7 +2,11 @@ package internal
 
 import (
 	"fmt"
+	"github.com/viggin543/go-concurrency/internal/lowlevel"
+	"log"
 	"net/http"
+	"os"
+	"runtime/debug"
 	"testing"
 )
 
@@ -73,4 +77,60 @@ func TestErrorHandlingSolved(t *testing.T) {
 		}
 		fmt.Printf("Response: %v\n", result.Response.Status)
 	}
+}
+
+
+func PostReport(id string) error {
+	_, err := lowlevel.DoWork()
+	if err != nil {
+		if _, ok := err.(lowlevel.Error); ok {
+			err = WrapErr(err, "cannot post report with id %q", id)
+		}
+		return err
+	}
+	return nil
+}
+
+func WrapErr(err error, _ string, _ string) error {
+	return err
+}
+
+
+type MyError struct {
+	Inner      error
+	Message    string
+	StackTrace string
+	Misc       map[string]interface{}
+}
+
+func wrapError(err error, messagef string, msgArgs ...interface{}) MyError {
+	return MyError{
+		Inner:      err,
+		Message:    fmt.Sprintf(messagef, msgArgs...),
+		StackTrace: string(debug.Stack()),
+		Misc:       make(map[string]interface{}),
+	}
+}
+
+func (err MyError) Error() string {
+	return err.Message
+}
+
+type LowLevelErr struct {
+	error
+}
+
+func isGloballyExec(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, LowLevelErr{wrapError(err, err.Error())}
+	}
+	return info.Mode().Perm()&0100 == 0100, nil
+}
+
+func Test_prettyError(t *testing.T) {
+	_, err := os.Stat("1")
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.Ltime|log.LUTC)
+	log.Printf("%#v", err)
 }
